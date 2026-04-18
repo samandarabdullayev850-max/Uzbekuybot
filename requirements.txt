@@ -1,9 +1,4 @@
 python-telegram-bot==20.7
-gotrue==1.3.0
-postgrest==0.13.2
-realtime==1.0.6
-storage3==0.5.3
-supabase==1.3.1
-httpx==0.24.1
-apscheduler==3.10.4
-python-dotenv==1.0.0
+supabase
+python-dotenv
+apscheduler
