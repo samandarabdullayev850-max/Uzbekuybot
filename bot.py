@@ -1,5 +1,6 @@
 import os
-os.environ.setdefault("PORT", "10000")import asyncio
+os.environ.setdefault("PORT", "10000")
+import asyncio
 import logging
 import os
 from dotenv import load_dotenv
