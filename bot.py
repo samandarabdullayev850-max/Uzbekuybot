@@ -287,16 +287,21 @@ def main():  # ← async olib tashlang
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.CONTACT, msg_handler))l
     logging.info("UyBot ishga tushdi!")
     
-    # Health server
-    import threading, http.server, os
+    logging.info("UyBot ishga tushdi!")
+
+    from flask import Flask as FlaskApp
+    import threading
+    flask_app = FlaskApp(__name__)
+
+    @flask_app.route("/")
+    def home():
+        return "UyBot ishlayapti!"
+
     threading.Thread(
-        target=lambda: http.server.HTTPServer(
-            ("", int(os.environ.get("PORT", 10000))),
-            type("H", (http.server.BaseHTTPRequestHandler,), {
-                "do_GET": lambda s: (s.send_response(200), s.end_headers()),
-                "log_message": lambda *a: None
-            })
-        ).serve_forever(),
+        target=lambda: flask_app.run(
+            host="0.0.0.0",
+            port=int(os.environ.get("PORT", 5000))
+        ),
         daemon=True
     ).start()
     
