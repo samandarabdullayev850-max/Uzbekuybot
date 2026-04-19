@@ -293,7 +293,7 @@ def main():  # ← async olib tashlang
         target=lambda: http.server.HTTPServer(
             ("", int(os.environ.get("PORT", 10000))),
             type("H", (http.server.BaseHTTPRequestHandler,), {
-                "do_GET": lambda s, r: (r.send_response(200), r.end_headers()),
+                "do_GET": lambda s: (s.send_response(200), s.end_headers()),
                 "log_message": lambda *a: None
             })
         ).serve_forever(),
