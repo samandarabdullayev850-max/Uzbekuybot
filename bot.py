@@ -673,7 +673,12 @@ async def main():
     await tg_app.updater.start_polling(drop_pending_updates=True)
     logging.info("UyBot ishga tushdi!")
 
-    await asyncio.Event().wait()
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await tg_app.updater.stop()
+        await tg_app.stop()
+        await tg_app.shutdown()
 
 
 if __name__ == "__main__":
