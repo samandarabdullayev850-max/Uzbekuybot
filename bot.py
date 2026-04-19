@@ -187,7 +187,7 @@ CITY_EMOJI = {
     "Qarshi": "🌾",
     "Termiz": "☀️"
 }
-DEAL_TYPES = {"uz":["Ijaraga","Sotuvga"],"ru":["Arenda","Prodaja"],"en":["Rent","Sale"]}
+DEAL_TYPES = {"uz":["Ijaraga","Sotuvga"],"ru":["Аренда","Продажа"],"en":["Rent","Sale"]}
 ROOMS = ["1","2","3","4","5+"]
 PRICE_RANGES_RENT = [(0,300),(300,600),(600,1000),(1000,2000),(2000,99999)]
 PRICE_LABELS_RENT = ["💵 $0-300","💵 $300-600","💵 $600-1000","💵 $1000-2000","💵 $2000+"]
@@ -263,7 +263,7 @@ def ask_subscribe(chat_id):
 def format_listing(l, lang="uz"):
     deal_map = {
         "uz": {"rent": "Ijara", "sale": "Sotish"},
-        "ru": {"rent": "Arenda", "sale": "Prodaja"},
+        "ru": {"rent": "Аренда", "sale": "Продажа"},
         "en": {"rent": "Rent", "sale": "Sale"}
     }
     suffix_map = {
@@ -511,6 +511,20 @@ def webhook():
             delete_listing(lid)
             send(chat_id, "🗑 Elon o'chirildi!")
             return "ok"
+        if data.startswith("my_delete_"):
+            lid = int(data.replace("my_delete_", ""))
+            # Faqat o'z elonini o'chira oladi
+            u2 = get_user(uid)
+            if u2:
+                listing = sb_get("listings", f"id=eq.{lid}&user_id=eq.{u2['id']}&select=id")
+                if listing:
+                    delete_listing(lid)
+                    del_ok = {"uz": "✅ Elon o'chirildi!", "ru": "✅ Объявление удалено!", "en": "✅ Listing deleted!"}.get(lang, "✅ O'chirildi!")
+                    send(chat_id, del_ok)
+                else:
+                    no_perm = {"uz": "❌ Bu elon sizniki emas!", "ru": "❌ Это не ваше объявление!", "en": "❌ This is not your listing!"}.get(lang)
+                    send(chat_id, no_perm)
+            return "ok"
 
         # Asosiy menyu
         if data == "menu_main":
@@ -533,16 +547,18 @@ def webhook():
         elif data == "menu_mylist":
             u2 = get_user(uid)
             if u2:
-                my = sb_get("listings", f"user_id=eq.{u2['id']}&select=*&order=published_at.desc&limit=5")
+                my = sb_get("listings", f"user_id=eq.{u2['id']}&select=*&order=published_at.desc&limit=10")
                 if my:
+                    del_label = {"uz": "🗑 O'chirish", "ru": "🗑 Удалить", "en": "🗑 Delete"}.get(lang, "🗑 O'chirish")
                     for l in my:
-                        status = "✅ Faol" if l.get("is_active") else "⏳ Tekshirilmoqda"
+                        status = {"uz": "✅ Faol", "ru": "✅ Активно", "en": "✅ Active"}.get(lang) if l.get("is_active") else {"uz": "⏳ Tekshirilmoqda", "ru": "⏳ На проверке", "en": "⏳ Pending"}.get(lang)
                         text = format_listing(l, lang) + f"\n\n{status}"
+                        kb = [[{"text": del_label, "callback_data": f"my_delete_{l['id']}"}]]
                         photos = l.get("photos") or []
                         if photos:
-                            send_photo(chat_id, photos[0], text)
+                            send_photo(chat_id, photos[0], text, kb)
                         else:
-                            send(chat_id, text)
+                            send(chat_id, text, kb)
                 else:
                     send(chat_id, "📋 Sizda hali elon yo'q.", [[{"text": "📢 Elon berish", "callback_data": "menu_add"}]])
 
@@ -563,14 +579,15 @@ def webhook():
                 {"text": "🏠 " + DEAL_TYPES[lang][0], "callback_data": "s_deal_rent"},
                 {"text": "🏷 " + DEAL_TYPES[lang][1], "callback_data": "s_deal_sale"}
             ]]
-            header = {"uz": f"🔍 Qidiruv — 2/4 qadam\n\n📍 Shahar: {city}\n\n🏠 Nima qidirmoqdasiz?", "ru": f"🔍 Поиск — шаг 2/4\n\n📍 Город: {city}\n\n🏠 Что ищете?", "en": f"🔍 Search — step 2/4\n\n📍 City: {city}\n\n🏠 What are you looking for?"}.get(lang, t["choose_deal"])
+            city_ru = {"Toshkent":"Ташкент","Samarqand":"Самарканд","Buxoro":"Бухара","Namangan":"Наманган","Andijon":"Андижан","Fargona":"Фергана","Nukus":"Нукус","Qarshi":"Карши","Termiz":"Термез"}.get(city, city)
+            header = {"uz": f"🔍 Qidiruv — 2/4 qadam\n\n📍 Shahar: {city}\n\n🏠 Nima qidirmoqdasiz?", "ru": f"🔍 Поиск — шаг 2/4\n\n📍 Город: {city_ru}\n\n🏠 Что ищете?", "en": f"🔍 Search — step 2/4\n\n📍 City: {city}\n\n🏠 What are you looking for?"}.get(lang, t["choose_deal"])
             send(chat_id, header, btns)
         elif data.startswith("s_deal_"):
             deal = data.replace("s_deal_", "")
             state["search_params"]["deal_type"] = deal
             state["step"] = "rooms"
             set_state(chat_id, state)
-            deal_label = {"rent": {"uz":"Ijara","ru":"Arenda","en":"Rent"}, "sale": {"uz":"Sotish","ru":"Prodaja","en":"Sale"}}.get(deal, {}).get(lang, deal)
+            deal_label = {"rent": {"uz":"Ijara","ru":"Аренда","en":"Rent"}, "sale": {"uz":"Sotish","ru":"Продажа","en":"Sale"}}.get(deal, {}).get(lang, deal)
             btns = [[{"text": f"🚪 {r}", "callback_data": f"s_rooms_{r}"} for r in ROOMS]]
             header = {"uz": f"🔍 Qidiruv — 3/4 qadam\n\n🏠 Tur: {deal_label}\n\n🚪 Nechta xona?", "ru": f"🔍 Поиск — шаг 3/4\n\n🏠 Тип: {deal_label}\n\n🚪 Количество комнат?", "en": f"🔍 Search — step 3/4\n\n🏠 Type: {deal_label}\n\n🚪 Number of rooms?"}.get(lang, t["choose_rooms"])
             send(chat_id, header, btns)
