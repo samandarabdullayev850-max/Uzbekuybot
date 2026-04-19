@@ -1,4 +1,5 @@
-import asyncio
+import os
+os.environ.setdefault("PORT", "10000")import asyncio
 import logging
 import os
 from dotenv import load_dotenv
@@ -285,7 +286,7 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^(Yordam|Pomosh|Help)$"),cmd_help))
     app.add_handler(MessageHandler(filters.TEXT|filters.PHOTO|filters.CONTACT,msg_handler))
     logging.info("UyBot ishga tushdi!")
+    import threading,http.server,os; threading.Thread(target=lambda:http.server.HTTPServer(("",int(os.environ.get("PORT",10000))),type("H",(http.server.BaseHTTPRequestHandler,),{"do_GET":lambda s,r:(r.send_response(200),r.end_headers()),"log_message":lambda*a:None})).serve_forever(),daemon=True).start()
     await app.run_polling(drop_pending_updates=True)
-
 if __name__ == "__main__":
     asyncio.run(main())
