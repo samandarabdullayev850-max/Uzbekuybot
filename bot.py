@@ -657,29 +657,8 @@ async def main():
     tg_app.add_handler(MessageHandler(filters.Regex("^(Yordam|Pomosh|Help)$"), cmd_help))
     tg_app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.CONTACT, msg_handler))
 
-    async def health(request):
-        return web.Response(text="OK")
-
-    web_app = web.Application()
-    web_app.router.add_get("/", health)
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    logging.info(f"Web server port {PORT} da ishga tushdi")
-
-    await tg_app.initialize()
-    await tg_app.start()
-    await tg_app.updater.start_polling(drop_pending_updates=True)
     logging.info("UyBot ishga tushdi!")
-
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await tg_app.updater.stop()
-        await tg_app.stop()
-        await tg_app.shutdown()
-
+    await tg_app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
