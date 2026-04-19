@@ -269,24 +269,38 @@ async def cb_settings(update,context):
     kb=InlineKeyboardMarkup([[InlineKeyboardButton(t["notif_on"] if is_active else t["notif_off"],callback_data="set_notif")],[InlineKeyboardButton(t["only_cheap_on"] if only_cheap else t["only_cheap_off"],callback_data="set_cheap")],[InlineKeyboardButton(fl[freq],callback_data="set_freq")],[InlineKeyboardButton(f"Limit: {limit_label}",callback_data="set_limit")],[InlineKeyboardButton("Tilni ozgartirish",callback_data="set_lang")]])
     await q.edit_message_text(t["settings_title"],reply_markup=kb)
 
-async def main():
-    app=ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start",cmd_start))
-    app.add_handler(CommandHandler("help",cmd_help))
-    app.add_handler(CommandHandler("add",add_start))
-    app.add_handler(CommandHandler("settings",settings_start))
-    app.add_handler(CommandHandler("stats",cmd_stats))
-    app.add_handler(CallbackQueryHandler(cb_lang,pattern="^lang_"))
-    app.add_handler(CallbackQueryHandler(cb_search,pattern="^(s_city_|s_deal_|s_rooms_|s_price_|s_page_)"))
-    app.add_handler(CallbackQueryHandler(cb_listing,pattern="^nl_"))
-    app.add_handler(CallbackQueryHandler(cb_settings,pattern="^(set_|sf_|sl_)"))
-    app.add_handler(MessageHandler(filters.Regex("^(Qidiruv|Poisk|Search)$"),search_start))
-    app.add_handler(MessageHandler(filters.Regex("^(Elon berish|Dobavit|Add listing)$"),add_start))
-    app.add_handler(MessageHandler(filters.Regex("^(Sozlamalar|Nastroyki|Settings)$"),settings_start))
-    app.add_handler(MessageHandler(filters.Regex("^(Yordam|Pomosh|Help)$"),cmd_help))
-    app.add_handler(MessageHandler(filters.TEXT|filters.PHOTO|filters.CONTACT,msg_handler))
+def main():  # ← async olib tashlang
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+  app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("add", add_start))
+    app.add_handler(CommandHandler("settings", settings_start))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CallbackQueryHandler(cb_lang, pattern="^lang_"))
+    app.add_handler(CallbackQueryHandler(cb_search, pattern="^(s_city_|s_deal_|s_rooms_|s_price_|s_page_)"))
+    app.add_handler(CallbackQueryHandler(cb_listing, pattern="^nl_"))
+    app.add_handler(CallbackQueryHandler(cb_settings, pattern="^(set_|sf_|sl_)"))
+    app.add_handler(MessageHandler(filters.Regex("^(Qidiruv|Poisk|Search)$"), search_start))
+    app.add_handler(MessageHandler(filters.Regex("^(Elon berish|Dobavit|Add listing)$"), add_start))
+    app.add_handler(MessageHandler(filters.Regex("^(Sozlamalar|Nastroyki|Settings)$"), settings_start))
+    app.add_handler(MessageHandler(filters.Regex("^(Yordam|Pomosh|Help)$"), cmd_help))
+    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.CONTACT, msg_handler))l
     logging.info("UyBot ishga tushdi!")
-    import threading,http.server,os; threading.Thread(target=lambda:http.server.HTTPServer(("",int(os.environ.get("PORT",10000))),type("H",(http.server.BaseHTTPRequestHandler,),{"do_GET":lambda s,r:(r.send_response(200),r.end_headers()),"log_message":lambda*a:None})).serve_forever(),daemon=True).start()
-    await app.run_polling(drop_pending_updates=True)
+    
+    # Health server
+    import threading, http.server, os
+    threading.Thread(
+        target=lambda: http.server.HTTPServer(
+            ("", int(os.environ.get("PORT", 10000))),
+            type("H", (http.server.BaseHTTPRequestHandler,), {
+                "do_GET": lambda s, r: (r.send_response(200), r.end_headers()),
+                "log_message": lambda *a: None
+            })
+        ).serve_forever(),
+        daemon=True
+    ).start()
+    
+    app.run_polling(drop_pending_updates=True)  # ← await olib tashlang
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()  # ← asyncio.run() olib tashlang
