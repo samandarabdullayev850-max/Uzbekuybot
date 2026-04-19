@@ -176,24 +176,53 @@ def log_search(uid, city, deal_type, rooms):
 
 # ===================== CONSTANTS =====================
 CITIES = ["Toshkent","Samarqand","Buxoro","Namangan","Andijon","Fargona","Nukus","Qarshi","Termiz"]
+CITY_EMOJI = {
+    "Toshkent": "🏙",
+    "Samarqand": "🏛",
+    "Buxoro": "🕌",
+    "Namangan": "🌿",
+    "Andijon": "🌄",
+    "Fargona": "🌸",
+    "Nukus": "🏜",
+    "Qarshi": "🌾",
+    "Termiz": "☀️"
+}
 DEAL_TYPES = {"uz":["Ijaraga","Sotuvga"],"ru":["Arenda","Prodaja"],"en":["Rent","Sale"]}
 ROOMS = ["1","2","3","4","5+"]
-PRICE_RANGES = [(0,300),(300,600),(600,1000),(1000,2000),(2000,99999)]
-PRICE_LABELS = ["$0-300","$300-600","$600-1000","$1000-2000","$2000+"]
+PRICE_RANGES_RENT = [(0,300),(300,600),(600,1000),(1000,2000),(2000,99999)]
+PRICE_LABELS_RENT = ["💵 $0-300","💵 $300-600","💵 $600-1000","💵 $1000-2000","💵 $2000+"]
+PRICE_RANGES_SALE = [(0,10000),(10000,30000),(30000,60000),(60000,100000),(100000,9999999)]
+PRICE_LABELS_SALE = ["💰 $0-10,000","💰 $10,000-30,000","💰 $30,000-60,000","💰 $60,000-100,000","💰 $100,000+"]
 NOTIFY_FREQ = {"uz":{"instant":"Darhol","daily":"Kuniga 1","weekly":"Haftada 1"},"ru":{"instant":"Srazu","daily":"Raz v den","weekly":"Raz v nedelyu"},"en":{"instant":"Instantly","daily":"Once a day","weekly":"Once a week"}}
 DAILY_LIMITS = [3,5,10,0]
 
-WELCOME_TEXT = """🏠 <b>UyBot ga xush kelibsiz!</b>
+WELCOME = {
+    "uz": """🏠 <b>UyBot ga xush kelibsiz!</b>
 
 O'zbekistonda uy-joy izlash hech qachon bu qadar oson bo'lmagan!
 
 🔍 Uy qidiring
 📢 Elon bering
-🔔 Yangi elonlardan xabardor bo'ling"""
+🔔 Yangi elonlardan xabardor bo'ling""",
+    "ru": """🏠 <b>Добро пожаловать в UyBot!</b>
 
-UZ = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Qidiruv","btn_my_listings":"📋 Mening elonlarim","btn_add_listing":"📢 Elon berish","btn_settings":"⚙️ Sozlamalar","btn_help":"❓ Yordam","choose_city":"📍 Qaysi shaharda?","choose_deal":"🏠 Nima qidirmoqdasiz?","choose_rooms":"🚪 Nechta xona?","choose_price":"💰 Narx oraligi?","no_results":"😔 Hech narsa topilmadi.","btn_next":"Keyingi ➡️","btn_prev":"⬅️ Oldingi","btn_cancel":"❌ Bekor","btn_skip":"⏭ O'tkazib yuborish","ask_deal":"🏠 Ijara yoki sotish?","ask_city":"📍 Qaysi shahar?","ask_rooms":"🚪 Nechta xona?","ask_price":"💰 Narx ($):","ask_description":"📝 Tavsif:","ask_photos":"📸 Rasm yuboring:","ask_address":"📍 Manzil:","ask_phone":"📞 Telefon:","listing_saved":"✅ Elon saqlandi! Admin tekshirgandan so'ng e'lon qilinadi.","settings_title":"⚙️ Sozlamalar:","notif_on":"🔔 Xabar: Yoqilgan","notif_off":"🔕 Xabar: O'chirilgan","choose_freq":"⏰ Qanchalik tez?","choose_limit":"📊 Kuniga nechta?","limit_unlimited":"♾ Cheksiz","only_cheap_on":"💚 Arzon: Ha","only_cheap_off":"💚 Arzon: Yo'q","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Foydalanuvchilar: {count}","stats_listings":"📋 Elonlar: {count}","stats_active":"✅ Faol elonlar: {count}","stats_subs":"🔔 Faol obunalar: {count}"}
-RU = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Poisk","btn_my_listings":"📋 Moi obyavleniya","btn_add_listing":"📢 Dobavit","btn_settings":"⚙️ Nastroyki","btn_help":"❓ Pomosh","choose_city":"📍 Gorod?","choose_deal":"🏠 Chto ischete?","choose_rooms":"🚪 Komnaty?","choose_price":"💰 Tsena?","no_results":"😔 Ne naydeno.","btn_next":"Dalee ➡️","btn_prev":"⬅️ Nazad","btn_cancel":"❌ Otmena","btn_skip":"⏭ Propustit","ask_deal":"🏠 Arenda ili prodazha?","ask_city":"📍 Gorod?","ask_rooms":"🚪 Komnaty?","ask_price":"💰 Tsena ($):","ask_description":"📝 Opisanie:","ask_photos":"📸 Foto:","ask_address":"📍 Adres:","ask_phone":"📞 Telefon:","listing_saved":"✅ Sokhraneno! Admin proverit.","settings_title":"⚙️ Nastroyki:","notif_on":"🔔 Uvedomleniya: Vkl","notif_off":"🔕 Uvedomleniya: Otkl","choose_freq":"⏰ Kak chasto?","choose_limit":"📊 Maks v den?","limit_unlimited":"♾ Bez limita","only_cheap_on":"💚 Deshevle: Da","only_cheap_off":"💚 Deshevle: Net","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Polzovateli: {count}","stats_listings":"📋 Obyavleniya: {count}","stats_active":"✅ Aktivnye: {count}","stats_subs":"🔔 Podpiski: {count}"}
-EN = {"choose_language":"🌍 Choose language:","welcome":WELCOME_TEXT,"btn_search":"🔍 Search","btn_my_listings":"📋 My listings","btn_add_listing":"📢 Add listing","btn_settings":"⚙️ Settings","btn_help":"❓ Help","choose_city":"📍 City?","choose_deal":"🏠 Looking for?","choose_rooms":"🚪 Rooms?","choose_price":"💰 Price?","no_results":"😔 Nothing found.","btn_next":"Next ➡️","btn_prev":"⬅️ Previous","btn_cancel":"❌ Cancel","btn_skip":"⏭ Skip","ask_deal":"🏠 Rent or sale?","ask_city":"📍 City?","ask_rooms":"🚪 Rooms?","ask_price":"💰 Price ($):","ask_description":"📝 Description:","ask_photos":"📸 Photos:","ask_address":"📍 Address:","ask_phone":"📞 Phone:","listing_saved":"✅ Saved! Admin will review.","settings_title":"⚙️ Settings:","notif_on":"🔔 Notifications: On","notif_off":"🔕 Notifications: Off","choose_freq":"⏰ How often?","choose_limit":"📊 Max per day?","limit_unlimited":"♾ Unlimited","only_cheap_on":"💚 Cheap only: Yes","only_cheap_off":"💚 Cheap only: No","help_text":"👨‍💻 Contact: @samandarbotdev","stats_title":"📊 Statistics:","stats_users":"👥 Users: {count}","stats_listings":"📋 Listings: {count}","stats_active":"✅ Active: {count}","stats_subs":"🔔 Subscriptions: {count}"}
+Поиск жилья в Узбекистане ещё никогда не был таким простым!
+
+🔍 Ищите жильё
+📢 Подавайте объявления
+🔔 Получайте уведомления о новых объявлениях""",
+    "en": """🏠 <b>Welcome to UyBot!</b>
+
+Finding housing in Uzbekistan has never been this easy!
+
+🔍 Search for homes
+📢 Post listings
+🔔 Get notified about new listings"""
+}
+
+UZ = {"choose_language":"🌍 Tilni tanlang:","welcome":"🏠 <b>UyBot ga xush kelibsiz!</b>\n\nO'zbekistonda uy-joy izlash hech qachon bu qadar oson bo'lmagan!\n\n🔍 Uy qidiring\n📢 Elon bering\n🔔 Yangi elonlardan xabardor bo'ling","btn_search":"🔍 Qidiruv","btn_my_listings":"📋 Mening elonlarim","btn_add_listing":"📢 Elon berish","btn_settings":"⚙️ Sozlamalar","btn_help":"❓ Yordam","choose_city":"📍 Qaysi shaharda?","choose_deal":"🏠 Nima qidirmoqdasiz?","choose_rooms":"🚪 Nechta xona?","choose_price":"💰 Narx oraligi?","no_results":"😔 Hech narsa topilmadi.","btn_next":"Keyingi ➡️","btn_prev":"⬅️ Oldingi","btn_cancel":"❌ Bekor","btn_skip":"⏭ O'tkazib yuborish","ask_deal":"🏠 Ijara yoki sotish?","ask_city":"📍 Qaysi shahar?","ask_rooms":"🚪 Nechta xona?","ask_price":"💰 Narx ($):","ask_description":"📝 Tavsif:","ask_photos":"📸 Rasm yuboring:","ask_address":"📍 Manzil:","ask_phone":"📞 Telefon:","listing_saved":"✅ Elon saqlandi! Admin tekshirgandan so'ng e'lon qilinadi.","settings_title":"⚙️ Sozlamalar:","notif_on":"🔔 Xabar: Yoqilgan","notif_off":"🔕 Xabar: O'chirilgan","choose_freq":"⏰ Qanchalik tez?","choose_limit":"📊 Kuniga nechta?","limit_unlimited":"♾ Cheksiz","only_cheap_on":"💚 Arzon: Ha","only_cheap_off":"💚 Arzon: Yo'q","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Foydalanuvchilar: {count}","stats_listings":"📋 Elonlar: {count}","stats_active":"✅ Faol elonlar: {count}","stats_subs":"🔔 Faol obunalar: {count}"}
+RU = {"choose_language":"🌍 Tilni tanlang:","welcome":"🏠 <b>Добро пожаловать в UyBot!</b>\n\nПоиск жилья в Узбекистане ещё никогда не был таким простым!\n\n🔍 Ищите жильё\n📢 Подавайте объявления\n🔔 Получайте уведомления","btn_search":"🔍 Poisk","btn_my_listings":"📋 Moi obyavleniya","btn_add_listing":"📢 Dobavit","btn_settings":"⚙️ Nastroyki","btn_help":"❓ Pomosh","choose_city":"📍 Gorod?","choose_deal":"🏠 Chto ischete?","choose_rooms":"🚪 Komnaty?","choose_price":"💰 Tsena?","no_results":"😔 Ne naydeno.","btn_next":"Dalee ➡️","btn_prev":"⬅️ Nazad","btn_cancel":"❌ Otmena","btn_skip":"⏭ Propustit","ask_deal":"🏠 Arenda ili prodazha?","ask_city":"📍 Gorod?","ask_rooms":"🚪 Komnaty?","ask_price":"💰 Tsena ($):","ask_description":"📝 Opisanie:","ask_photos":"📸 Foto:","ask_address":"📍 Adres:","ask_phone":"📞 Telefon:","listing_saved":"✅ Sokhraneno! Admin proverit.","settings_title":"⚙️ Nastroyki:","notif_on":"🔔 Uvedomleniya: Vkl","notif_off":"🔕 Uvedomleniya: Otkl","choose_freq":"⏰ Kak chasto?","choose_limit":"📊 Maks v den?","limit_unlimited":"♾ Bez limita","only_cheap_on":"💚 Deshevle: Da","only_cheap_off":"💚 Deshevle: Net","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Polzovateli: {count}","stats_listings":"📋 Obyavleniya: {count}","stats_active":"✅ Aktivnye: {count}","stats_subs":"🔔 Podpiski: {count}"}
+EN = {"choose_language":"🌍 Choose language:","welcome":"🏠 <b>Welcome to UyBot!</b>\n\nFinding housing in Uzbekistan has never been this easy!\n\n🔍 Search for homes\n📢 Post listings\n🔔 Get notified","btn_search":"🔍 Search","btn_my_listings":"📋 My listings","btn_add_listing":"📢 Add listing","btn_settings":"⚙️ Settings","btn_help":"❓ Help","choose_city":"📍 City?","choose_deal":"🏠 Looking for?","choose_rooms":"🚪 Rooms?","choose_price":"💰 Price?","no_results":"😔 Nothing found.","btn_next":"Next ➡️","btn_prev":"⬅️ Previous","btn_cancel":"❌ Cancel","btn_skip":"⏭ Skip","ask_deal":"🏠 Rent or sale?","ask_city":"📍 City?","ask_rooms":"🚪 Rooms?","ask_price":"💰 Price ($):","ask_description":"📝 Description:","ask_photos":"📸 Photos:","ask_address":"📍 Address:","ask_phone":"📞 Phone:","listing_saved":"✅ Saved! Admin will review.","settings_title":"⚙️ Settings:","notif_on":"🔔 Notifications: On","notif_off":"🔕 Notifications: Off","choose_freq":"⏰ How often?","choose_limit":"📊 Max per day?","limit_unlimited":"♾ Unlimited","only_cheap_on":"💚 Cheap only: Yes","only_cheap_off":"💚 Cheap only: No","help_text":"👨‍💻 Contact: @samandarbotdev","stats_title":"📊 Statistics:","stats_users":"👥 Users: {count}","stats_listings":"📋 Listings: {count}","stats_active":"✅ Active: {count}","stats_subs":"🔔 Subscriptions: {count}"}
 
 def tx(lang): return {"uz":UZ,"ru":RU,"en":EN}.get(lang, UZ)
 
@@ -521,33 +550,48 @@ def webhook():
             state = {"flow": "search", "step": "deal", "search_params": {"city": city}}
             set_state(chat_id, state)
             btns = [[
-                {"text": DEAL_TYPES[lang][0], "callback_data": "s_deal_rent"},
-                {"text": DEAL_TYPES[lang][1], "callback_data": "s_deal_sale"}
+                {"text": "🏠 " + DEAL_TYPES[lang][0], "callback_data": "s_deal_rent"},
+                {"text": "🏷 " + DEAL_TYPES[lang][1], "callback_data": "s_deal_sale"}
             ]]
-            send(chat_id, t["choose_deal"], btns)
+            header = {"uz": f"🔍 Qidiruv — 2/4 qadam\n\n📍 Shahar: {city}\n\n🏠 Nima qidirmoqdasiz?", "ru": f"🔍 Поиск — шаг 2/4\n\n📍 Город: {city}\n\n🏠 Что ищете?", "en": f"🔍 Search — step 2/4\n\n📍 City: {city}\n\n🏠 What are you looking for?"}.get(lang, t["choose_deal"])
+            send(chat_id, header, btns)
         elif data.startswith("s_deal_"):
             deal = data.replace("s_deal_", "")
             state["search_params"]["deal_type"] = deal
             state["step"] = "rooms"
             set_state(chat_id, state)
-            btns = [[{"text": r, "callback_data": f"s_rooms_{r}"} for r in ROOMS]]
-            send(chat_id, t["choose_rooms"], btns)
+            deal_label = {"rent": {"uz":"Ijara","ru":"Arenda","en":"Rent"}, "sale": {"uz":"Sotish","ru":"Prodaja","en":"Sale"}}.get(deal, {}).get(lang, deal)
+            btns = [[{"text": f"🚪 {r}", "callback_data": f"s_rooms_{r}"} for r in ROOMS]]
+            header = {"uz": f"🔍 Qidiruv — 3/4 qadam\n\n🏠 Tur: {deal_label}\n\n🚪 Nechta xona?", "ru": f"🔍 Поиск — шаг 3/4\n\n🏠 Тип: {deal_label}\n\n🚪 Количество комнат?", "en": f"🔍 Search — step 3/4\n\n🏠 Type: {deal_label}\n\n🚪 Number of rooms?"}.get(lang, t["choose_rooms"])
+            send(chat_id, header, btns)
         elif data.startswith("s_rooms_"):
             rooms = data.replace("s_rooms_", "")
             state["search_params"]["rooms"] = rooms
             state["step"] = "price"
             set_state(chat_id, state)
-            btns = [[{"text": p, "callback_data": f"s_price_{i}"}] for i, p in enumerate(PRICE_LABELS)]
-            send(chat_id, t["choose_price"], btns)
+            deal = state["search_params"].get("deal_type", "rent")
+            if deal == "sale":
+                price_labels = PRICE_LABELS_SALE
+                price_key = "sale"
+            else:
+                price_labels = PRICE_LABELS_RENT
+                price_key = "rent"
+            state["search_params"]["price_key"] = price_key
+            btns = [[{"text": p, "callback_data": f"s_price_{i}"}] for i, p in enumerate(price_labels)]
+            header = {"uz": f"🔍 Qidiruv — 4/4 qadam\n\n🚪 Xona: {rooms}\n\n💰 Narx oralig'ini tanlang:", "ru": f"🔍 Поиск — шаг 4/4\n\n🚪 Комнат: {rooms}\n\n💰 Выберите диапазон цен:", "en": f"🔍 Search — step 4/4\n\n🚪 Rooms: {rooms}\n\n💰 Select price range:"}.get(lang, t["choose_price"])
+            send(chat_id, header, btns)
         elif data.startswith("s_price_"):
             idx = int(data.replace("s_price_", ""))
-            state["search_params"]["price_min"], state["search_params"]["price_max"] = PRICE_RANGES[idx]
+            price_key = state["search_params"].get("price_key", "rent")
+            ranges = PRICE_RANGES_SALE if price_key == "sale" else PRICE_RANGES_RENT
+            state["search_params"]["price_min"], state["search_params"]["price_max"] = ranges[idx]
             state["step"] = "results"
             set_state(chat_id, state)
             u2 = get_user(uid)
             if u2:
                 s = state["search_params"]
                 log_search(u2["id"], s.get("city"), s.get("deal_type"), s.get("rooms"))
+            send(chat_id, "🔍 Qidirilmoqda...")
             show_results(chat_id, state, lang, 0)
         elif data.startswith("s_page_"):
             page = int(data.replace("s_page_", ""))
@@ -788,13 +832,24 @@ def webhook():
 
 
 def handle_main_menu(chat_id, lang):
-    t = tx(lang)
-    send(chat_id, t["welcome"], main_menu_kb(lang))
+    welcome_text = WELCOME.get(lang, WELCOME["uz"])
+    send(chat_id, welcome_text, main_menu_kb(lang))
 
 def handle_search(chat_id, lang):
     set_state(chat_id, {"flow": "search", "step": "city"})
-    btns = [[{"text": c, "callback_data": f"s_city_{c}"}] for c in CITIES]
-    send(chat_id, tx(lang)["choose_city"], btns)
+    city_btns = []
+    row = []
+    for i, c in enumerate(CITIES):
+        emoji = CITY_EMOJI.get(c, "📍")
+        row.append({"text": f"{emoji} {c}", "callback_data": f"s_city_{c}"})
+        if len(row) == 2:
+            city_btns.append(row)
+            row = []
+    if row:
+        city_btns.append(row)
+    t = tx(lang)
+    header = {"uz": "🔍 Qidiruv — 1/4 qadam\n\n📍 Shaharni tanlang:", "ru": "🔍 Поиск — шаг 1/4\n\n📍 Выберите город:", "en": "🔍 Search — step 1/4\n\n📍 Select city:"}.get(lang, "📍 Shaharni tanlang:")
+    send(chat_id, header, city_btns)
 
 def handle_add(chat_id, lang):
     set_state(chat_id, {"flow": "add", "step": "deal", "nl": {}, "photos": []})
