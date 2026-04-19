@@ -1,6 +1,9 @@
 import os
 import logging
 import requests as req
+import threading
+import time
+from bs4 import BeautifulSoup
 from flask import Flask, request
 from dotenv import load_dotenv
 
@@ -9,6 +12,9 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 WEBHOOK_URL = "https://uybot.onrender.com"
+
+ADMIN_IDS = [8726418671]
+REQUIRED_CHANNEL = None  # Keyinchalik qo'shiladi: "@kanal_username"
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -37,6 +43,11 @@ def sb_patch(table, filters, data):
     r = req.patch(url, headers=HEADERS, json=data)
     return r.ok
 
+def sb_delete(table, filters):
+    url = f"{SUPABASE_URL}/rest/v1/{table}?{filters}"
+    r = req.delete(url, headers=HEADERS)
+    return r.ok
+
 def sb_count(table, filters=""):
     h = dict(HEADERS)
     h["Prefer"] = "count=exact"
@@ -50,16 +61,16 @@ def sb_count(table, filters=""):
 
 # ===================== TELEGRAM =====================
 def tg(method, data):
-    return req.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=data, timeout=10)
+    return req.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}", json=data, timeout=15)
 
-def send(chat_id, text, kb=None):
-    data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+def send(chat_id, text, kb=None, parse_mode="HTML"):
+    data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     if kb:
         data["reply_markup"] = {"inline_keyboard": kb}
     tg("sendMessage", data)
 
 def send_photo(chat_id, photo, caption=None, kb=None):
-    data = {"chat_id": chat_id, "photo": photo}
+    data = {"chat_id": chat_id, "photo": photo, "parse_mode": "HTML"}
     if caption: data["caption"] = caption
     if kb: data["reply_markup"] = {"inline_keyboard": kb}
     tg("sendPhoto", data)
@@ -70,7 +81,12 @@ def answer_cb(cb_id):
 def set_webhook():
     tg("setWebhook", {"url": f"{WEBHOOK_URL}/webhook"})
 
-# ===================== DB =====================
+def get_chat_member(chat_id, user_id):
+    r = req.get(f"https://api.telegram.org/bot{BOT_TOKEN}/getChatMember",
+                params={"chat_id": chat_id, "user_id": user_id}, timeout=5)
+    return r.json().get("result", {}).get("status", "")
+
+# ===================== DB HELPERS =====================
 def get_user(tid):
     data = sb_get("users", f"telegram_id=eq.{tid}&select=*")
     return data[0] if data else None
@@ -85,7 +101,27 @@ def get_or_create_user(tid, name, username=None):
 def update_lang(tid, lang):
     sb_patch("users", f"telegram_id=eq.{tid}", {"language": lang})
 
-def get_listings(city=None, deal_type=None, rooms=None, price_min=None, price_max=None, offset=0, limit=3):
+def get_all_users():
+    return sb_get("users", "select=telegram_id,is_banned")
+
+def get_admins():
+    data = sb_get("admins", "select=telegram_id")
+    ids = [d["telegram_id"] for d in data] if data else []
+    ids += ADMIN_IDS
+    return list(set(ids))
+
+def is_admin(uid):
+    return uid in get_admins()
+
+def add_admin(tid):
+    existing = sb_get("admins", f"telegram_id=eq.{tid}")
+    if not existing:
+        sb_post("admins", {"telegram_id": tid})
+
+def remove_admin(tid):
+    sb_delete("admins", f"telegram_id=eq.{tid}")
+
+def get_listings_db(city=None, deal_type=None, rooms=None, price_min=None, price_max=None, offset=0, limit=3):
     f = "is_active=eq.true&select=*&order=published_at.desc"
     if city: f += f"&city=eq.{city}"
     if deal_type: f += f"&deal_type=eq.{deal_type}"
@@ -95,7 +131,7 @@ def get_listings(city=None, deal_type=None, rooms=None, price_min=None, price_ma
     f += f"&offset={offset}&limit={limit}"
     return sb_get("listings", f)
 
-def count_listings(city=None, deal_type=None, rooms=None, price_min=None, price_max=None):
+def count_listings_db(city=None, deal_type=None, rooms=None, price_min=None, price_max=None):
     f = "is_active=eq.true"
     if city: f += f"&city=eq.{city}"
     if deal_type: f += f"&deal_type=eq.{deal_type}"
@@ -103,6 +139,15 @@ def count_listings(city=None, deal_type=None, rooms=None, price_min=None, price_
     if price_min is not None: f += f"&price=gte.{price_min}"
     if price_max is not None: f += f"&price=lte.{price_max}"
     return sb_count("listings", f)
+
+def get_pending_listings():
+    return sb_get("listings", "is_active=eq.false&source=eq.bot&select=*&order=published_at.desc")
+
+def approve_listing(lid):
+    sb_patch("listings", f"id=eq.{lid}", {"is_active": True})
+
+def delete_listing(lid):
+    sb_delete("listings", f"id=eq.{lid}")
 
 def add_listing(data):
     return sb_post("listings", data)
@@ -117,6 +162,9 @@ def save_sub(uid, data):
     else:
         data["user_id"] = uid
         sb_post("subscriptions", data)
+
+def log_search(uid, city, deal_type, rooms):
+    sb_post("search_logs", {"user_id": uid, "city": city, "deal_type": deal_type, "rooms": rooms})
 
 # ===================== CONSTANTS =====================
 CITIES = ["Toshkent","Samarqand","Buxoro","Namangan","Andijon","Fargona","Nukus","Qarshi","Termiz"]
@@ -135,9 +183,9 @@ O'zbekistonda uy-joy izlash hech qachon bu qadar oson bo'lmagan!
 📢 Elon bering
 🔔 Yangi elonlardan xabardor bo'ling"""
 
-UZ = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Qidiruv","btn_my_listings":"📋 Mening elonlarim","btn_add_listing":"📢 Elon berish","btn_settings":"⚙️ Sozlamalar","btn_help":"❓ Yordam","choose_city":"📍 Qaysi shaharda?","choose_deal":"🏠 Nima qidirmoqdasiz?","choose_rooms":"🚪 Nechta xona?","choose_price":"💰 Narx oraligi?","no_results":"😔 Hech narsa topilmadi.","btn_next":"Keyingi ➡️","btn_prev":"⬅️ Oldingi","btn_cancel":"❌ Bekor","btn_skip":"⏭ O'tkazib yuborish","ask_deal":"🏠 Ijara yoki sotish?","ask_city":"📍 Qaysi shahar?","ask_rooms":"🚪 Nechta xona?","ask_price":"💰 Narx ($):","ask_description":"📝 Tavsif (yoki o'tkazib yuborish):","ask_photos":"📸 Rasm yuboring:","ask_address":"📍 Manzil:","ask_phone":"📞 Telefon:","listing_saved":"✅ Elon saqlandi!","settings_title":"⚙️ Sozlamalar:","notif_on":"🔔 Xabar: Yoqilgan","notif_off":"🔕 Xabar: O'chirilgan","choose_freq":"⏰ Qanchalik tez?","choose_limit":"📊 Kuniga nechta?","limit_unlimited":"♾ Cheksiz","only_cheap_on":"💚 Arzon: Ha","only_cheap_off":"💚 Arzon: Yo'q","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Foydalanuvchilar: {count}","stats_listings":"📋 Elonlar: {count}","stats_active":"✅ Faol elonlar: {count}","stats_subs":"🔔 Faol obunalar: {count}"}
-RU = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Poisk","btn_my_listings":"📋 Moi obyavleniya","btn_add_listing":"📢 Dobavit","btn_settings":"⚙️ Nastroyki","btn_help":"❓ Pomosh","choose_city":"📍 Gorod?","choose_deal":"🏠 Chto ischete?","choose_rooms":"🚪 Komnaty?","choose_price":"💰 Tsena?","no_results":"😔 Ne naydeno.","btn_next":"Dalee ➡️","btn_prev":"⬅️ Nazad","btn_cancel":"❌ Otmena","btn_skip":"⏭ Propustit","ask_deal":"🏠 Arenda ili prodazha?","ask_city":"📍 Gorod?","ask_rooms":"🚪 Komnaty?","ask_price":"💰 Tsena ($):","ask_description":"📝 Opisanie:","ask_photos":"📸 Foto:","ask_address":"📍 Adres:","ask_phone":"📞 Telefon:","listing_saved":"✅ Sokhraneno!","settings_title":"⚙️ Nastroyki:","notif_on":"🔔 Uvedomleniya: Vkl","notif_off":"🔕 Uvedomleniya: Otkl","choose_freq":"⏰ Kak chasto?","choose_limit":"📊 Maks v den?","limit_unlimited":"♾ Bez limita","only_cheap_on":"💚 Deshevle: Da","only_cheap_off":"💚 Deshevle: Net","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Polzovateli: {count}","stats_listings":"📋 Obyavleniya: {count}","stats_active":"✅ Aktivnye: {count}","stats_subs":"🔔 Podpiski: {count}"}
-EN = {"choose_language":"🌍 Choose language:","welcome":WELCOME_TEXT,"btn_search":"🔍 Search","btn_my_listings":"📋 My listings","btn_add_listing":"📢 Add listing","btn_settings":"⚙️ Settings","btn_help":"❓ Help","choose_city":"📍 City?","choose_deal":"🏠 Looking for?","choose_rooms":"🚪 Rooms?","choose_price":"💰 Price?","no_results":"😔 Nothing found.","btn_next":"Next ➡️","btn_prev":"⬅️ Previous","btn_cancel":"❌ Cancel","btn_skip":"⏭ Skip","ask_deal":"🏠 Rent or sale?","ask_city":"📍 City?","ask_rooms":"🚪 Rooms?","ask_price":"💰 Price ($):","ask_description":"📝 Description:","ask_photos":"📸 Photos:","ask_address":"📍 Address:","ask_phone":"📞 Phone:","listing_saved":"✅ Saved!","settings_title":"⚙️ Settings:","notif_on":"🔔 Notifications: On","notif_off":"🔕 Notifications: Off","choose_freq":"⏰ How often?","choose_limit":"📊 Max per day?","limit_unlimited":"♾ Unlimited","only_cheap_on":"💚 Cheap only: Yes","only_cheap_off":"💚 Cheap only: No","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistics:","stats_users":"👥 Users: {count}","stats_listings":"📋 Listings: {count}","stats_active":"✅ Active: {count}","stats_subs":"🔔 Subscriptions: {count}"}
+UZ = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Qidiruv","btn_my_listings":"📋 Mening elonlarim","btn_add_listing":"📢 Elon berish","btn_settings":"⚙️ Sozlamalar","btn_help":"❓ Yordam","choose_city":"📍 Qaysi shaharda?","choose_deal":"🏠 Nima qidirmoqdasiz?","choose_rooms":"🚪 Nechta xona?","choose_price":"💰 Narx oraligi?","no_results":"😔 Hech narsa topilmadi.","btn_next":"Keyingi ➡️","btn_prev":"⬅️ Oldingi","btn_cancel":"❌ Bekor","btn_skip":"⏭ O'tkazib yuborish","ask_deal":"🏠 Ijara yoki sotish?","ask_city":"📍 Qaysi shahar?","ask_rooms":"🚪 Nechta xona?","ask_price":"💰 Narx ($):","ask_description":"📝 Tavsif:","ask_photos":"📸 Rasm yuboring:","ask_address":"📍 Manzil:","ask_phone":"📞 Telefon:","listing_saved":"✅ Elon saqlandi! Admin tekshirgandan so'ng e'lon qilinadi.","settings_title":"⚙️ Sozlamalar:","notif_on":"🔔 Xabar: Yoqilgan","notif_off":"🔕 Xabar: O'chirilgan","choose_freq":"⏰ Qanchalik tez?","choose_limit":"📊 Kuniga nechta?","limit_unlimited":"♾ Cheksiz","only_cheap_on":"💚 Arzon: Ha","only_cheap_off":"💚 Arzon: Yo'q","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Foydalanuvchilar: {count}","stats_listings":"📋 Elonlar: {count}","stats_active":"✅ Faol elonlar: {count}","stats_subs":"🔔 Faol obunalar: {count}"}
+RU = {"choose_language":"🌍 Tilni tanlang:","welcome":WELCOME_TEXT,"btn_search":"🔍 Poisk","btn_my_listings":"📋 Moi obyavleniya","btn_add_listing":"📢 Dobavit","btn_settings":"⚙️ Nastroyki","btn_help":"❓ Pomosh","choose_city":"📍 Gorod?","choose_deal":"🏠 Chto ischete?","choose_rooms":"🚪 Komnaty?","choose_price":"💰 Tsena?","no_results":"😔 Ne naydeno.","btn_next":"Dalee ➡️","btn_prev":"⬅️ Nazad","btn_cancel":"❌ Otmena","btn_skip":"⏭ Propustit","ask_deal":"🏠 Arenda ili prodazha?","ask_city":"📍 Gorod?","ask_rooms":"🚪 Komnaty?","ask_price":"💰 Tsena ($):","ask_description":"📝 Opisanie:","ask_photos":"📸 Foto:","ask_address":"📍 Adres:","ask_phone":"📞 Telefon:","listing_saved":"✅ Sokhraneno! Admin proverit.","settings_title":"⚙️ Nastroyki:","notif_on":"🔔 Uvedomleniya: Vkl","notif_off":"🔕 Uvedomleniya: Otkl","choose_freq":"⏰ Kak chasto?","choose_limit":"📊 Maks v den?","limit_unlimited":"♾ Bez limita","only_cheap_on":"💚 Deshevle: Da","only_cheap_off":"💚 Deshevle: Net","help_text":"👨‍💻 Murojaat uchun: @samandarbotdev","stats_title":"📊 Statistika:","stats_users":"👥 Polzovateli: {count}","stats_listings":"📋 Obyavleniya: {count}","stats_active":"✅ Aktivnye: {count}","stats_subs":"🔔 Podpiski: {count}"}
+EN = {"choose_language":"🌍 Choose language:","welcome":WELCOME_TEXT,"btn_search":"🔍 Search","btn_my_listings":"📋 My listings","btn_add_listing":"📢 Add listing","btn_settings":"⚙️ Settings","btn_help":"❓ Help","choose_city":"📍 City?","choose_deal":"🏠 Looking for?","choose_rooms":"🚪 Rooms?","choose_price":"💰 Price?","no_results":"😔 Nothing found.","btn_next":"Next ➡️","btn_prev":"⬅️ Previous","btn_cancel":"❌ Cancel","btn_skip":"⏭ Skip","ask_deal":"🏠 Rent or sale?","ask_city":"📍 City?","ask_rooms":"🚪 Rooms?","ask_price":"💰 Price ($):","ask_description":"📝 Description:","ask_photos":"📸 Photos:","ask_address":"📍 Address:","ask_phone":"📞 Phone:","listing_saved":"✅ Saved! Admin will review.","settings_title":"⚙️ Settings:","notif_on":"🔔 Notifications: On","notif_off":"🔕 Notifications: Off","choose_freq":"⏰ How often?","choose_limit":"📊 Max per day?","limit_unlimited":"♾ Unlimited","only_cheap_on":"💚 Cheap only: Yes","only_cheap_off":"💚 Cheap only: No","help_text":"👨‍💻 Contact: @samandarbotdev","stats_title":"📊 Statistics:","stats_users":"👥 Users: {count}","stats_listings":"📋 Listings: {count}","stats_active":"✅ Active: {count}","stats_subs":"🔔 Subscriptions: {count}"}
 
 def tx(lang): return {"uz":UZ,"ru":RU,"en":EN}.get(lang, UZ)
 
@@ -147,97 +195,73 @@ def main_menu_kb(lang):
             [{"text": t["btn_add_listing"], "callback_data": "menu_add"}, {"text": t["btn_my_listings"], "callback_data": "menu_mylist"}],
             [{"text": t["btn_settings"], "callback_data": "menu_settings"}, {"text": t["btn_help"], "callback_data": "menu_help"}]]
 
-# User state (xotira)
+# User state
 user_state = {}
 
-def get_state(uid):
-    return user_state.get(uid, {})
+def get_state(uid): return user_state.get(uid, {})
+def set_state(uid, data): user_state[uid] = data
+def clear_state(uid): user_state.pop(uid, None)
 
-def set_state(uid, data):
-    user_state[uid] = data
+# ===================== OBUNA TEKSHIRISH =====================
+def check_subscription(uid):
+    if not REQUIRED_CHANNEL:
+        return True
+    status = get_chat_member(REQUIRED_CHANNEL, uid)
+    return status in ["member", "administrator", "creator"]
 
-def clear_state(uid):
-    user_state.pop(uid, None)
+def ask_subscribe(chat_id):
+    kb = [[{"text": "📢 Kanalga o'tish", "url": f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}"}],
+          [{"text": "✅ Obuna bo'ldim", "callback_data": "check_sub"}]]
+    send(chat_id, "⚠️ Botdan foydalanish uchun kanalga obuna bo'ling!", kb)
 
-# ===================== HANDLERS =====================
-def handle_start(chat_id, uid, name, username):
-    get_or_create_user(uid, name, username)
-    kb = [[
-        {"text": "O'zbek", "callback_data": "lang_uz"},
-        {"text": "Русский", "callback_data": "lang_ru"},
-        {"text": "English", "callback_data": "lang_en"}
-    ]]
-    send(chat_id, UZ["choose_language"], kb)
+# ===================== ELON FORMATI =====================
+def format_listing(l):
+    deal = "Ijara" if l.get("deal_type") == "rent" else "Sotish"
+    rooms = l.get("rooms", "")
+    city = l.get("city", "")
+    address = l.get("address", "")
+    price = l.get("price", "")
+    phone = l.get("phone", "")
+    description = l.get("description", "")
 
-def handle_main_menu(chat_id, lang):
-    t = tx(lang)
-    send(chat_id, t["welcome"], main_menu_kb(lang))
+    location = city
+    if address:
+        location = f"{city}, {address}"
 
-def handle_search(chat_id, lang):
-    set_state(chat_id, {"flow": "search", "step": "city"})
-    btns = [[{"text": c, "callback_data": f"s_city_{c}"}] for c in CITIES]
-    send(chat_id, tx(lang)["choose_city"], btns)
+    text = f"🏠 <b>{rooms} xonali uy — {deal}</b>\n"
+    text += f"📍 {location}\n"
+    if price:
+        suffix = "/oy" if l.get("deal_type") == "rent" else ""
+        text += f"💰 ${price}{suffix}\n"
+    if description:
+        text += f"📝 {description}\n"
+    if phone:
+        text += f"📞 {phone}"
+    return text
 
-def handle_add(chat_id, lang):
-    set_state(chat_id, {"flow": "add", "step": "deal", "nl": {}, "photos": []})
-    t = tx(lang)
-    btns = [
-        [{"text": DEAL_TYPES[lang][0], "callback_data": "nl_deal_rent"},
-         {"text": DEAL_TYPES[lang][1], "callback_data": "nl_deal_sale"}],
-        [{"text": t["btn_cancel"], "callback_data": "menu_main"}]
-    ]
-    send(chat_id, t["ask_deal"], btns)
-
-def handle_settings(chat_id, uid, lang):
-    u = get_user(uid)
-    sub = get_sub(u["id"]) if u else {}
-    sub = sub or {}
-    t = tx(lang)
-    is_active = sub.get("is_active", True)
-    only_cheap = sub.get("only_cheap", False)
-    freq = sub.get("notify_freq", "daily")
-    daily_limit = sub.get("daily_limit", 5)
-    fl = NOTIFY_FREQ[lang]
-    limit_label = t["limit_unlimited"] if daily_limit == 0 else f"{daily_limit} ta"
-    kb = [
-        [{"text": t["notif_on"] if is_active else t["notif_off"], "callback_data": "set_notif"}],
-        [{"text": t["only_cheap_on"] if only_cheap else t["only_cheap_off"], "callback_data": "set_cheap"}],
-        [{"text": fl[freq], "callback_data": "set_freq"}],
-        [{"text": f"Limit: {limit_label}", "callback_data": "set_limit"}],
-        [{"text": "Tilni o'zgartirish", "callback_data": "set_lang"}],
-        [{"text": "◀️ Orqaga", "callback_data": "menu_main"}]
-    ]
-    send(chat_id, t["settings_title"], kb)
-
+# ===================== QIDIRUV NATIJALARI =====================
 def show_results(chat_id, state, lang, page):
     t = tx(lang)
     s = state.get("search_params", {})
-    listings = get_listings(
+    listings = get_listings_db(
         city=s.get("city"), deal_type=s.get("deal_type"),
         rooms=s.get("rooms"), price_min=s.get("price_min"),
         price_max=s.get("price_max"), offset=page*3, limit=3
     )
-    total = count_listings(
+    total = count_listings_db(
         city=s.get("city"), deal_type=s.get("deal_type"),
         rooms=s.get("rooms"), price_min=s.get("price_min"),
         price_max=s.get("price_max")
     )
     if not listings:
-        send(chat_id, t["no_results"], [[{"text": "◀️ Orqaga", "callback_data": "menu_main"}]])
+        send(chat_id, t["no_results"], [[{"text": "🏠 Bosh menyu", "callback_data": "menu_main"}]])
         return
     nav = []
     if page > 0: nav.append({"text": t["btn_prev"], "callback_data": f"s_page_{page-1}"})
     if (page+1)*3 < total: nav.append({"text": t["btn_next"], "callback_data": f"s_page_{page+1}"})
+
     for i, l in enumerate(listings):
-        lines = []
-        if l.get("title"): lines.append(f"<b>{l['title']}</b>")
-        if l.get("price"): lines.append(f"💰 ${l['price']}")
-        if l.get("rooms"): lines.append(f"🚪 {l['rooms']} xona")
-        if l.get("city"): lines.append(f"📍 {l['city']}")
-        if l.get("address"): lines.append(l["address"])
-        if l.get("description"): lines.append(l["description"][:200])
-        if l.get("phone"): lines.append(f"📞 {l['phone']}")
-        text = "\n".join(lines) if lines else "—"
+        text = format_listing(l)
         kb = [nav] if nav and i == len(listings)-1 else None
         photos = l.get("photos") or []
         if photos:
@@ -245,14 +269,136 @@ def show_results(chat_id, state, lang, page):
         else:
             send(chat_id, text, kb)
 
+# ===================== ADMIN PANEL =====================
+def admin_menu(chat_id):
+    kb = [
+        [{"text": "📊 Statistika", "callback_data": "adm_stats"}],
+        [{"text": "📋 Kutayotgan elonlar", "callback_data": "adm_pending"}],
+        [{"text": "📣 Broadcast", "callback_data": "adm_broadcast"}],
+        [{"text": "👥 Admin qo'shish", "callback_data": "adm_addadmin"}],
+        [{"text": "❌ Admin o'chirish", "callback_data": "adm_removeadmin"}],
+        [{"text": "📢 Kanal o'rnatish", "callback_data": "adm_setchannel"}],
+    ]
+    send(chat_id, "🔧 <b>Admin panel</b>", kb)
+
+def admin_stats(chat_id):
+    users = sb_count("users")
+    listings = sb_count("listings")
+    active = sb_count("listings", "is_active=eq.true")
+    pending = sb_count("listings", "is_active=eq.false&source=eq.bot")
+    today_users = sb_count("users", "created_at=gte." + time.strftime("%Y-%m-%d"))
+
+    # Qidiruv logi
+    logs = sb_get("search_logs", "select=city&order=created_at.desc&limit=100")
+    city_count = {}
+    for log in logs:
+        c = log.get("city", "Noma'lum")
+        city_count[c] = city_count.get(c, 0) + 1
+    top_cities = sorted(city_count.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_text = "\n".join([f"  • {c}: {n} marta" for c, n in top_cities]) if top_cities else "  Yo'q"
+
+    text = f"""📊 <b>Batafsil statistika</b>
+
+👥 Jami foydalanuvchilar: <b>{users}</b>
+🆕 Bugun qo'shildi: <b>{today_users}</b>
+📋 Jami elonlar: <b>{listings}</b>
+✅ Faol elonlar: <b>{active}</b>
+⏳ Tasdiq kutayapti: <b>{pending}</b>
+
+🔍 Ko'p qidiriladigan shaharlar:
+{top_text}"""
+
+    send(chat_id, text, [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+
+def show_pending(chat_id):
+    listings = get_pending_listings()
+    if not listings:
+        send(chat_id, "✅ Tasdiq kutayotgan elon yo'q.", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+        return
+    for l in listings[:5]:
+        text = format_listing(l)
+        text += f"\n\n🆔 ID: {l['id']}"
+        kb = [[
+            {"text": "✅ Tasdiqlash", "callback_data": f"adm_approve_{l['id']}"},
+            {"text": "❌ O'chirish", "callback_data": f"adm_delete_{l['id']}"}
+        ]]
+        photos = l.get("photos") or []
+        if photos:
+            send_photo(chat_id, photos[0], text, kb)
+        else:
+            send(chat_id, text, kb)
+
+# ===================== OLX SCRAPING =====================
+def scrape_olx():
+    try:
+        cities = {
+            "Toshkent": "tashkent",
+            "Samarqand": "samarkand",
+            "Buxoro": "bukhara",
+        }
+        for city_uz, city_en in cities.items():
+            url = f"https://www.olx.uz/nedvizhimost/kvartiry/sdam/{city_en}/"
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            r = req.get(url, headers=headers, timeout=15)
+            if not r.ok:
+                continue
+            soup = BeautifulSoup(r.text, "html.parser")
+            cards = soup.select("[data-cy='l-card']")[:10]
+            for card in cards:
+                try:
+                    title_el = card.select_one("[data-cy='ad-card-title']")
+                    price_el = card.select_one("[data-testid='ad-price']")
+                    img_el = card.select_one("img")
+                    link_el = card.select_one("a")
+
+                    title = title_el.text.strip() if title_el else ""
+                    price_text = price_el.text.strip() if price_el else ""
+                    photo = img_el.get("src", "") if img_el else ""
+                    link = "https://www.olx.uz" + link_el.get("href", "") if link_el else ""
+
+                    # Narxni ajratib olish
+                    price = 0
+                    for word in price_text.replace(",", "").split():
+                        if word.isdigit():
+                            price = int(word)
+                            break
+
+                    # Duplicate tekshirish
+                    existing = sb_get("listings", f"source=eq.olx&title=eq.{title}&city=eq.{city_uz}")
+                    if existing:
+                        continue
+
+                    listing_data = {
+                        "title": title,
+                        "city": city_uz,
+                        "deal_type": "rent",
+                        "price": price,
+                        "photos": [photo] if photo else [],
+                        "source": "olx",
+                        "is_active": True,
+                        "phone": "",
+                        "description": f"OLX: {link}"
+                    }
+                    sb_post("listings", listing_data)
+                except Exception as e:
+                    logging.error(f"OLX card xatosi: {e}")
+        logging.info("OLX scraping tugadi")
+    except Exception as e:
+        logging.error(f"OLX scraping xatosi: {e}")
+
+def olx_scheduler():
+    while True:
+        scrape_olx()
+        time.sleep(1800)  # 30 daqiqada bir
+
 # ===================== WEBHOOK =====================
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    global REQUIRED_CHANNEL
     d = request.json
     if not d:
         return "ok"
 
-    # Callback query
     if "callback_query" in d:
         cb = d["callback_query"]
         chat_id = cb["message"]["chat"]["id"]
@@ -265,19 +411,86 @@ def webhook():
         t = tx(lang)
         state = get_state(chat_id)
 
+        # Obuna tekshirish
+        if data == "check_sub":
+            if check_subscription(uid):
+                handle_main_menu(chat_id, lang)
+            else:
+                ask_subscribe(chat_id)
+            return "ok"
+
+        # Admin panel
+        if data == "adm_menu" and is_admin(uid):
+            admin_menu(chat_id)
+            return "ok"
+        if data == "adm_stats" and is_admin(uid):
+            admin_stats(chat_id)
+            return "ok"
+        if data == "adm_pending" and is_admin(uid):
+            show_pending(chat_id)
+            return "ok"
+        if data == "adm_broadcast" and is_admin(uid):
+            set_state(uid, {"admin_flow": "broadcast"})
+            send(chat_id, "📣 Broadcast xabarini yozing:", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
+            return "ok"
+        if data == "adm_addadmin" and is_admin(uid):
+            set_state(uid, {"admin_flow": "addadmin"})
+            send(chat_id, "👤 Yangi admin Telegram ID sini yozing:", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
+            return "ok"
+        if data == "adm_removeadmin" and is_admin(uid):
+            set_state(uid, {"admin_flow": "removeadmin"})
+            send(chat_id, "👤 O'chiriladigan admin ID sini yozing:", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
+            return "ok"
+        if data == "adm_setchannel" and is_admin(uid):
+            set_state(uid, {"admin_flow": "setchannel"})
+            send(chat_id, "📢 Kanal username ni yozing (masalan @kanal_uz):\n\nO'chirish uchun: off", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
+            return "ok"
+        if data.startswith("adm_approve_") and is_admin(uid):
+            lid = int(data.replace("adm_approve_", ""))
+            approve_listing(lid)
+            send(chat_id, "✅ Elon tasdiqlandi!")
+            return "ok"
+        if data.startswith("adm_delete_") and is_admin(uid):
+            lid = int(data.replace("adm_delete_", ""))
+            delete_listing(lid)
+            send(chat_id, "🗑 Elon o'chirildi!")
+            return "ok"
+
+        # Asosiy menyu
         if data == "menu_main":
             clear_state(chat_id)
             handle_main_menu(chat_id, lang)
         elif data == "menu_search":
+            if REQUIRED_CHANNEL and not check_subscription(uid):
+                ask_subscribe(chat_id)
+                return "ok"
             handle_search(chat_id, lang)
         elif data == "menu_add":
+            if REQUIRED_CHANNEL and not check_subscription(uid):
+                ask_subscribe(chat_id)
+                return "ok"
             handle_add(chat_id, lang)
         elif data == "menu_settings":
             handle_settings(chat_id, uid, lang)
         elif data == "menu_help":
             send(chat_id, t["help_text"], [[{"text": "◀️ Orqaga", "callback_data": "menu_main"}]])
+        elif data == "menu_mylist":
+            u2 = get_user(uid)
+            if u2:
+                my = sb_get("listings", f"user_id=eq.{u2['id']}&select=*&order=published_at.desc&limit=5")
+                if my:
+                    for l in my:
+                        status = "✅ Faol" if l.get("is_active") else "⏳ Tekshirilmoqda"
+                        text = format_listing(l) + f"\n\n{status}"
+                        photos = l.get("photos") or []
+                        if photos:
+                            send_photo(chat_id, photos[0], text)
+                        else:
+                            send(chat_id, text)
+                else:
+                    send(chat_id, "📋 Sizda hali elon yo'q.", [[{"text": "📢 Elon berish", "callback_data": "menu_add"}]])
 
-        # Til tanlash
+        # Til
         elif data.startswith("lang_"):
             new_lang = data.split("_")[1]
             update_lang(uid, new_lang)
@@ -312,6 +525,10 @@ def webhook():
             state["search_params"]["price_min"], state["search_params"]["price_max"] = PRICE_RANGES[idx]
             state["step"] = "results"
             set_state(chat_id, state)
+            u2 = get_user(uid)
+            if u2:
+                s = state["search_params"]
+                log_search(u2["id"], s.get("city"), s.get("deal_type"), s.get("rooms"))
             show_results(chat_id, state, lang, 0)
         elif data.startswith("s_page_"):
             page = int(data.replace("s_page_", ""))
@@ -380,8 +597,9 @@ def webhook():
             save_sub(u2["id"], {"notify_freq": data.replace("sf_", "")})
             handle_settings(chat_id, uid, lang)
         elif data == "set_limit":
-            kb = [[{"text": t["limit_unlimited"] if l == 0 else f"{l} ta", "callback_data": f"sl_{l}"}] for l in DAILY_LIMITS]
-            send(chat_id, t["choose_limit"], kb)
+            t2 = tx(lang)
+            kb = [[{"text": t2["limit_unlimited"] if l == 0 else f"{l} ta", "callback_data": f"sl_{l}"}] for l in DAILY_LIMITS]
+            send(chat_id, t2["choose_limit"], kb)
         elif data.startswith("sl_"):
             u2 = get_user(uid)
             save_sub(u2["id"], {"daily_limit": int(data.replace("sl_", ""))})
@@ -396,7 +614,6 @@ def webhook():
 
         return "ok"
 
-    # Message
     if "message" not in d:
         return "ok"
 
@@ -414,26 +631,74 @@ def webhook():
     t = tx(lang)
     state = get_state(chat_id)
 
+    # Admin flow
+    admin_flow = state.get("admin_flow")
+    if admin_flow and is_admin(uid):
+        if admin_flow == "broadcast" and text:
+            users = get_all_users()
+            sent = 0
+            for user in users:
+                if not user.get("is_banned"):
+                    try:
+                        send(user["telegram_id"], text)
+                        sent += 1
+                    except:
+                        pass
+            clear_state(uid)
+            send(chat_id, f"✅ {sent} ta foydalanuvchiga yuborildi!", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+            return "ok"
+        elif admin_flow == "addadmin" and text:
+            try:
+                new_id = int(text.strip())
+                add_admin(new_id)
+                clear_state(uid)
+                send(chat_id, f"✅ {new_id} admin qilindi!", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+            except:
+                send(chat_id, "❌ Noto'g'ri ID!")
+            return "ok"
+        elif admin_flow == "removeadmin" and text:
+            try:
+                rem_id = int(text.strip())
+                remove_admin(rem_id)
+                clear_state(uid)
+                send(chat_id, f"✅ {rem_id} admindan o'chirildi!", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+            except:
+                send(chat_id, "❌ Noto'g'ri ID!")
+            return "ok"
+        elif admin_flow == "setchannel" and text:
+            if text.strip().lower() == "off":
+                REQUIRED_CHANNEL = None
+                clear_state(uid)
+                send(chat_id, "✅ Majburiy obuna o'chirildi!", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+            else:
+                REQUIRED_CHANNEL = text.strip()
+                clear_state(uid)
+                send(chat_id, f"✅ Kanal o'rnatildi: {REQUIRED_CHANNEL}", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+            return "ok"
+
     # Komandalar
     if text == "/start":
-        handle_start(chat_id, uid, name, username)
+        get_or_create_user(uid, name, username)
+        if REQUIRED_CHANNEL and not check_subscription(uid):
+            ask_subscribe(chat_id)
+            return "ok"
+        send(chat_id, UZ["choose_language"], [[
+            {"text": "O'zbek", "callback_data": "lang_uz"},
+            {"text": "Русский", "callback_data": "lang_ru"},
+            {"text": "English", "callback_data": "lang_en"}
+        ]])
         return "ok"
-    if text == "/add":
-        handle_add(chat_id, lang)
+
+    if text == "/admin" and is_admin(uid):
+        admin_menu(chat_id)
         return "ok"
-    if text == "/settings":
-        handle_settings(chat_id, uid, lang)
-        return "ok"
+
     if text == "/help":
         send(chat_id, t["help_text"])
         return "ok"
-    if text == "/stats":
-        users = sb_count("users")
-        listings = sb_count("listings")
-        active = sb_count("listings", "is_active=eq.true")
-        subs = sb_count("subscriptions", "is_active=eq.true")
-        txt = f"{t['stats_title']}\n\n{t['stats_users'].format(count=users)}\n{t['stats_listings'].format(count=listings)}\n{t['stats_active'].format(count=active)}\n{t['stats_subs'].format(count=subs)}"
-        send(chat_id, txt)
+
+    if text == "/stats" and is_admin(uid):
+        admin_stats(chat_id)
         return "ok"
 
     # Elon berish flow
@@ -447,7 +712,7 @@ def webhook():
         if step == "price" and text:
             clean = text.replace("$", "").strip()
             if not clean.isdigit():
-                send(chat_id, "Narxni raqamda kiriting:")
+                send(chat_id, "💰 Narxni raqamda kiriting:")
                 return "ok"
             nl["price"] = int(clean)
             state["step"] = "description"
@@ -465,12 +730,15 @@ def webhook():
                 photos.append(photo[-1]["file_id"])
                 state["photos"] = photos
                 set_state(chat_id, state)
-                if len(photos) >= 10:
+                if len(photos) >= 5:
                     state["step"] = "address"
                     set_state(chat_id, state)
                     send(chat_id, t["ask_address"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_addr"}]])
                 else:
-                    send(chat_id, f"Rasm qabul qilindi ({len(photos)} ta).", [[{"text": f"Tayyor ({len(photos)} ta)", "callback_data": "nl_photos_done"}]])
+                    send(chat_id, f"📸 Rasm qabul qilindi ({len(photos)} ta).", [[
+                        {"text": f"✅ Tayyor ({len(photos)} ta)", "callback_data": "nl_photos_done"},
+                        {"text": "⏭ O'tkazib yuborish", "callback_data": "nl_skip_photos"}
+                    ]])
 
         elif step == "address" and text:
             nl["address"] = text
@@ -489,21 +757,75 @@ def webhook():
             clear_state(chat_id)
             send(chat_id, t["listing_saved"], main_menu_kb(lang))
 
+            # Adminlarga xabar
+            for admin_id in get_admins():
+                try:
+                    send(admin_id, f"📢 Yangi elon tasdiqlash kutmoqda!\n\n{format_listing(nl)}",
+                         [[{"text": "📋 Ko'rish", "callback_data": "adm_pending"}]])
+                except:
+                    pass
+
     return "ok"
+
+
+def handle_main_menu(chat_id, lang):
+    t = tx(lang)
+    send(chat_id, t["welcome"], main_menu_kb(lang))
+
+def handle_search(chat_id, lang):
+    set_state(chat_id, {"flow": "search", "step": "city"})
+    btns = [[{"text": c, "callback_data": f"s_city_{c}"}] for c in CITIES]
+    send(chat_id, tx(lang)["choose_city"], btns)
+
+def handle_add(chat_id, lang):
+    set_state(chat_id, {"flow": "add", "step": "deal", "nl": {}, "photos": []})
+    t = tx(lang)
+    btns = [
+        [{"text": DEAL_TYPES[lang][0], "callback_data": "nl_deal_rent"},
+         {"text": DEAL_TYPES[lang][1], "callback_data": "nl_deal_sale"}],
+        [{"text": t["btn_cancel"], "callback_data": "menu_main"}]
+    ]
+    send(chat_id, t["ask_deal"], btns)
+
+def handle_settings(chat_id, uid, lang):
+    u = get_user(uid)
+    sub = get_sub(u["id"]) if u else {}
+    sub = sub or {}
+    t = tx(lang)
+    is_active = sub.get("is_active", True)
+    only_cheap = sub.get("only_cheap", False)
+    freq = sub.get("notify_freq", "daily")
+    daily_limit = sub.get("daily_limit", 5)
+    fl = NOTIFY_FREQ[lang]
+    limit_label = t["limit_unlimited"] if daily_limit == 0 else f"{daily_limit} ta"
+    kb = [
+        [{"text": t["notif_on"] if is_active else t["notif_off"], "callback_data": "set_notif"}],
+        [{"text": t["only_cheap_on"] if only_cheap else t["only_cheap_off"], "callback_data": "set_cheap"}],
+        [{"text": fl[freq], "callback_data": "set_freq"}],
+        [{"text": f"Limit: {limit_label}", "callback_data": "set_limit"}],
+        [{"text": "🌍 Tilni o'zgartirish", "callback_data": "set_lang"}],
+        [{"text": "◀️ Orqaga", "callback_data": "menu_main"}]
+    ]
+    send(chat_id, t["settings_title"], kb)
 
 
 @app.route("/")
 def index():
     return "UyBot ishlayapti!"
 
-
 @app.route("/set_webhook")
 def setup_webhook():
     set_webhook()
     return "Webhook o'rnatildi!"
 
+@app.route("/scrape_now")
+def scrape_now():
+    threading.Thread(target=scrape_olx).start()
+    return "OLX scraping boshlandi!"
+
 
 if __name__ == "__main__":
     set_webhook()
+    threading.Thread(target=olx_scheduler, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
