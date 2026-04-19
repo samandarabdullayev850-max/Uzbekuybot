@@ -125,7 +125,11 @@ def get_listings_db(city=None, deal_type=None, rooms=None, price_min=None, price
     f = "is_active=eq.true&select=*&order=published_at.desc"
     if city: f += f"&city=eq.{city}"
     if deal_type: f += f"&deal_type=eq.{deal_type}"
-    if rooms: f += f"&rooms=eq.{rooms}"
+    if rooms:
+        try:
+            f += f"&rooms=eq.{int(rooms)}"
+        except:
+            pass
     if price_min is not None: f += f"&price=gte.{price_min}"
     if price_max is not None: f += f"&price=lte.{price_max}"
     f += f"&offset={offset}&limit={limit}"
@@ -135,7 +139,11 @@ def count_listings_db(city=None, deal_type=None, rooms=None, price_min=None, pri
     f = "is_active=eq.true"
     if city: f += f"&city=eq.{city}"
     if deal_type: f += f"&deal_type=eq.{deal_type}"
-    if rooms: f += f"&rooms=eq.{rooms}"
+    if rooms:
+        try:
+            f += f"&rooms=eq.{int(rooms)}"
+        except:
+            pass
     if price_min is not None: f += f"&price=gte.{price_min}"
     if price_max is not None: f += f"&price=lte.{price_max}"
     return sb_count("listings", f)
@@ -215,8 +223,19 @@ def ask_subscribe(chat_id):
     send(chat_id, "⚠️ Botdan foydalanish uchun kanalga obuna bo'ling!", kb)
 
 # ===================== ELON FORMATI =====================
-def format_listing(l):
-    deal = "Ijara" if l.get("deal_type") == "rent" else "Sotish"
+def format_listing(l, lang="uz"):
+    deal_map = {
+        "uz": {"rent": "Ijara", "sale": "Sotish"},
+        "ru": {"rent": "Arenda", "sale": "Prodaja"},
+        "en": {"rent": "Rent", "sale": "Sale"}
+    }
+    suffix_map = {
+        "uz": "/oy",
+        "ru": "/mes",
+        "en": "/mo"
+    }
+    rooms_label = {"uz": "xonali uy", "ru": "комн. кв.", "en": "room apt"}.get(lang, "xonali uy")
+    deal = deal_map.get(lang, deal_map["uz"]).get(l.get("deal_type", "rent"), "Ijara")
     rooms = l.get("rooms", "")
     city = l.get("city", "")
     address = l.get("address", "")
@@ -228,10 +247,10 @@ def format_listing(l):
     if address:
         location = f"{city}, {address}"
 
-    text = f"🏠 <b>{rooms} xonali uy — {deal}</b>\n"
+    text = f"🏠 <b>{rooms} {rooms_label} — {deal}</b>\n"
     text += f"📍 {location}\n"
     if price:
-        suffix = "/oy" if l.get("deal_type") == "rent" else ""
+        suffix = suffix_map.get(lang, "/oy") if l.get("deal_type") == "rent" else ""
         text += f"💰 ${price}{suffix}\n"
     if description:
         text += f"📝 {description}\n"
@@ -261,7 +280,7 @@ def show_results(chat_id, state, lang, page):
     if (page+1)*3 < total: nav.append({"text": t["btn_next"], "callback_data": f"s_page_{page+1}"})
 
     for i, l in enumerate(listings):
-        text = format_listing(l)
+        text = format_listing(l, lang)
         kb = [nav] if nav and i == len(listings)-1 else None
         photos = l.get("photos") or []
         if photos:
@@ -316,7 +335,7 @@ def show_pending(chat_id):
         send(chat_id, "✅ Tasdiq kutayotgan elon yo'q.", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
         return
     for l in listings[:5]:
-        text = format_listing(l)
+        text = format_listing(l, lang)
         text += f"\n\n🆔 ID: {l['id']}"
         kb = [[
             {"text": "✅ Tasdiqlash", "callback_data": f"adm_approve_{l['id']}"},
@@ -481,7 +500,7 @@ def webhook():
                 if my:
                     for l in my:
                         status = "✅ Faol" if l.get("is_active") else "⏳ Tekshirilmoqda"
-                        text = format_listing(l) + f"\n\n{status}"
+                        text = format_listing(l, lang) + f"\n\n{status}"
                         photos = l.get("photos") or []
                         if photos:
                             send_photo(chat_id, photos[0], text)
