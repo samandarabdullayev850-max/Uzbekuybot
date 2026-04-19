@@ -3,6 +3,7 @@ import logging
 import threading
 import requests as req
 from flask import Flask
+from werkzeug.serving import make_server
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters
@@ -387,7 +388,8 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.CONTACT, msg_handler))
 
     port = int(os.environ.get("PORT", 5000))
-    threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=port), daemon=True).start()
+    server = make_server("0.0.0.0", port, flask_app)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 
     logging.info("UyBot ishga tushdi!")
     app.run_polling(drop_pending_updates=True)
