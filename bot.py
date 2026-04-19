@@ -14,7 +14,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 WEBHOOK_URL = "https://uybot.onrender.com"
 
 ADMIN_IDS = [8726418671]
-REQUIRED_CHANNEL = None  # Keyinchalik qo'shiladi: "@kanal_username"
+REQUIRED_CHANNELS = []  # Majburiy obuna kanallari
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -149,7 +149,7 @@ def count_listings_db(city=None, deal_type=None, rooms=None, price_min=None, pri
     return sb_count("listings", f)
 
 def get_pending_listings():
-    return sb_get("listings", "is_active=eq.false&source=eq.bot&select=*&order=published_at.desc")
+    return sb_get("listings", "is_active=eq.false&select=*&order=published_at.desc")
 
 def approve_listing(lid):
     sb_patch("listings", f"id=eq.{lid}", {"is_active": True})
@@ -249,15 +249,20 @@ def clear_state(uid): user_state.pop(uid, None)
 
 # ===================== OBUNA TEKSHIRISH =====================
 def check_subscription(uid):
-    if not REQUIRED_CHANNEL:
+    if not REQUIRED_CHANNELS:
         return True
-    status = get_chat_member(REQUIRED_CHANNEL, uid)
-    return status in ["member", "administrator", "creator"]
+    for channel in REQUIRED_CHANNELS:
+        status = get_chat_member(channel, uid)
+        if status not in ["member", "administrator", "creator"]:
+            return False
+    return True
 
 def ask_subscribe(chat_id):
-    kb = [[{"text": "📢 Kanalga o'tish", "url": f"https://t.me/{REQUIRED_CHANNEL.lstrip('@')}"}],
-          [{"text": "✅ Obuna bo'ldim", "callback_data": "check_sub"}]]
-    send(chat_id, "⚠️ Botdan foydalanish uchun kanalga obuna bo'ling!", kb)
+    kb = []
+    for channel in REQUIRED_CHANNELS:
+        kb.append([{"text": f"📢 {channel} ga o'tish", "url": f"https://t.me/{channel.lstrip('@')}"}])
+    kb.append([{"text": "✅ Obuna bo'ldim", "callback_data": "check_sub"}])
+    send(chat_id, "⚠️ Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling!", kb)
 
 # ===================== ELON FORMATI =====================
 def format_listing(l, lang="uz"):
@@ -326,6 +331,21 @@ def show_results(chat_id, state, lang, page):
             send(chat_id, text, kb)
 
 # ===================== ADMIN PANEL =====================
+def show_channels(chat_id):
+    if not REQUIRED_CHANNELS:
+        text = "📢 Hozircha majburiy kanal yo'q"
+    else:
+        text = "📢 <b>Majburiy obuna kanallari:</b>"
+    kb = []
+    for ch in REQUIRED_CHANNELS:
+        kb.append([
+            {"text": f"📢 {ch}", "url": f"https://t.me/{ch.lstrip('@')}"},
+            {"text": "❌ O'chirish", "callback_data": f"adm_delchannel_{ch.lstrip('@')}"}
+        ])
+    kb.append([{"text": "➕ Kanal qo'shish", "callback_data": "adm_addchannel"}])
+    kb.append([{"text": "◀️ Orqaga", "callback_data": "adm_menu"}])
+    send(chat_id, text, kb)
+
 def admin_menu(chat_id):
     kb = [
         [{"text": "📊 Statistika", "callback_data": "adm_stats"}],
@@ -333,7 +353,7 @@ def admin_menu(chat_id):
         [{"text": "📣 Broadcast", "callback_data": "adm_broadcast"}],
         [{"text": "👥 Admin qo'shish", "callback_data": "adm_addadmin"}],
         [{"text": "❌ Admin o'chirish", "callback_data": "adm_removeadmin"}],
-        [{"text": "📢 Kanal o'rnatish", "callback_data": "adm_setchannel"}],
+        [{"text": "📢 Kanallar", "callback_data": "adm_setchannel"}],
     ]
     send(chat_id, "🔧 <b>Admin panel</b>", kb)
 
@@ -366,7 +386,7 @@ def admin_stats(chat_id):
 
     send(chat_id, text, [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
 
-def show_pending(chat_id):
+def show_pending(chat_id, lang="uz"):
     listings = get_pending_listings()
     if not listings:
         send(chat_id, "✅ Tasdiq kutayotgan elon yo'q.", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
@@ -483,7 +503,7 @@ def webhook():
             admin_stats(chat_id)
             return "ok"
         if data == "adm_pending" and is_admin(uid):
-            show_pending(chat_id)
+            show_pending(chat_id, lang)
             return "ok"
         if data == "adm_broadcast" and is_admin(uid):
             set_state(uid, {"admin_flow": "broadcast"})
@@ -498,8 +518,18 @@ def webhook():
             send(chat_id, "👤 O'chiriladigan admin ID sini yozing:", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
             return "ok"
         if data == "adm_setchannel" and is_admin(uid):
-            set_state(uid, {"admin_flow": "setchannel"})
-            send(chat_id, "📢 Kanal username ni yozing (masalan @kanal_uz):\n\nO'chirish uchun: off", [[{"text": "❌ Bekor", "callback_data": "adm_menu"}]])
+            show_channels(chat_id)
+            return "ok"
+        if data == "adm_addchannel" and is_admin(uid):
+            set_state(uid, {"admin_flow": "addchannel"})
+            send(chat_id, "📢 Kanal username ni yozing:\n(masalan: @kanal_uz)", [[{"text": "❌ Bekor", "callback_data": "adm_setchannel"}]])
+            return "ok"
+        if data.startswith("adm_delchannel_") and is_admin(uid):
+            ch = data.replace("adm_delchannel_", "").replace("_", "@", 1)
+            ch = "@" + data.replace("adm_delchannel_@", "")
+            if ch in REQUIRED_CHANNELS:
+                REQUIRED_CHANNELS.remove(ch)
+            show_channels(chat_id)
             return "ok"
         if data.startswith("adm_approve_") and is_admin(uid):
             lid = int(data.replace("adm_approve_", ""))
@@ -531,12 +561,12 @@ def webhook():
             clear_state(chat_id)
             handle_main_menu(chat_id, lang)
         elif data == "menu_search":
-            if REQUIRED_CHANNEL and not check_subscription(uid):
+            if REQUIRED_CHANNELS and not check_subscription(uid):
                 ask_subscribe(chat_id)
                 return "ok"
             handle_search(chat_id, lang)
         elif data == "menu_add":
-            if REQUIRED_CHANNEL and not check_subscription(uid):
+            if REQUIRED_CHANNELS and not check_subscription(uid):
                 ask_subscribe(chat_id)
                 return "ok"
             handle_add(chat_id, lang)
@@ -755,21 +785,21 @@ def webhook():
             except:
                 send(chat_id, "❌ Noto'g'ri ID!")
             return "ok"
-        elif admin_flow == "setchannel" and text:
-            if text.strip().lower() == "off":
-                REQUIRED_CHANNEL = None
-                clear_state(uid)
-                send(chat_id, "✅ Majburiy obuna o'chirildi!", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
-            else:
-                REQUIRED_CHANNEL = text.strip()
-                clear_state(uid)
-                send(chat_id, f"✅ Kanal o'rnatildi: {REQUIRED_CHANNEL}", [[{"text": "◀️ Orqaga", "callback_data": "adm_menu"}]])
+        elif admin_flow == "addchannel" and text:
+            channel = text.strip()
+            if not channel.startswith("@"):
+                channel = "@" + channel
+            if channel not in REQUIRED_CHANNELS:
+                REQUIRED_CHANNELS.append(channel)
+            clear_state(uid)
+            send(chat_id, f"✅ {channel} qo'shildi!")
+            show_channels(chat_id)
             return "ok"
 
     # Komandalar
     if text == "/start":
         get_or_create_user(uid, name, username)
-        if REQUIRED_CHANNEL and not check_subscription(uid):
+        if REQUIRED_CHANNELS and not check_subscription(uid):
             ask_subscribe(chat_id)
             return "ok"
         send(chat_id, UZ["choose_language"], [[
