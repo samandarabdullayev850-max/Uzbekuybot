@@ -676,24 +676,18 @@ def webhook():
             state["step"] = "price"
             set_state(chat_id, state)
             send(chat_id, t["ask_price"])
-        elif data == "nl_skip_desc":
-            state["nl"]["description"] = None
-            state["step"] = "photos"
-            set_state(chat_id, state)
-            send(chat_id, t["ask_photos"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_photos"}]])
-        elif data == "nl_skip_photos":
-            state["step"] = "address"
-            set_state(chat_id, state)
-            send(chat_id, t["ask_address"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_addr"}]])
+        # nl_skip_desc removed - description is mandatory
+        # nl_skip_photos removed - photos are mandatory
         elif data == "nl_photos_done":
-            state["step"] = "address"
-            set_state(chat_id, state)
-            send(chat_id, t["ask_address"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_addr"}]])
-        elif data == "nl_skip_addr":
-            state["nl"]["address"] = None
-            state["step"] = "phone"
-            set_state(chat_id, state)
-            send(chat_id, t["ask_phone"])
+            if not state.get("photos"):
+                no_photo = {"uz": "📸 Kamida 1 ta rasm yuborish majburiy!", "ru": "📸 Необходимо загрузить минимум 1 фото!", "en": "📸 At least 1 photo is required!"}.get(lang, "📸 Rasm majburiy!")
+                send(chat_id, no_photo)
+            else:
+                state["step"] = "address"
+                set_state(chat_id, state)
+                addr_text = {"uz": "📍 Manzilni yozing (majburiy):\nMasalan: Yunusobod 5-mavze, 12-uy", "ru": "📍 Напишите адрес (обязательно):\nНапример: Юнусабад 5 массив, дом 12", "en": "📍 Write address (required):\nExample: Yunusabad 5th district, house 12"}.get(lang, t["ask_address"])
+                send(chat_id, addr_text)
+        # nl_skip_addr removed - address is mandatory
 
         # Sozlamalar
         elif data == "set_notif":
@@ -832,18 +826,21 @@ def webhook():
         if step == "price" and text:
             clean = text.replace("$", "").strip()
             if not clean.isdigit():
-                send(chat_id, "💰 Narxni raqamda kiriting:")
+                no_price = {"uz": "💰 Narxni faqat raqamda kiriting! Masalan: 500", "ru": "💰 Введите цену цифрами! Например: 500", "en": "💰 Enter price in numbers only! Example: 500"}.get(lang, "💰 Narxni raqamda kiriting!")
+                send(chat_id, no_price)
                 return "ok"
             nl["price"] = int(clean)
             state["step"] = "description"
             set_state(chat_id, state)
-            send(chat_id, t["ask_description"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_desc"}]])
+            desc_text = {"uz": "📝 Tavsif yozing (majburiy):\nMasalan: Yangi ta'mirlangan, mebelli, kommunal to'lovlar alohida", "ru": "📝 Напишите описание (обязательно):\nНапример: Свежий ремонт, мебелированная, коммунальные отдельно", "en": "📝 Write description (required):\nExample: Newly renovated, furnished, utilities separate"}.get(lang, t["ask_description"])
+            send(chat_id, desc_text)
 
         elif step == "description" and text:
             nl["description"] = text
             state["step"] = "photos"
             set_state(chat_id, state)
-            send(chat_id, t["ask_photos"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_photos"}]])
+            photos_text = {"uz": "📸 Rasm yuboring (kamida 1 ta, majburiy):", "ru": "📸 Загрузите фото (минимум 1, обязательно):", "en": "📸 Upload photos (at least 1, required):"}.get(lang, t["ask_photos"])
+            send(chat_id, photos_text, [[{"text": f"✅ Tayyor ({len(state.get('photos', []))} ta)", "callback_data": "nl_photos_done"}]] if state.get("photos") else None)
 
         elif step == "photos":
             if photo:
@@ -853,18 +850,21 @@ def webhook():
                 if len(photos) >= 5:
                     state["step"] = "address"
                     set_state(chat_id, state)
-                    send(chat_id, t["ask_address"], [[{"text": t["btn_skip"], "callback_data": "nl_skip_addr"}]])
+                    addr_text = {"uz": "📍 Manzilni yozing (majburiy):\nMasalan: Yunusobod 5-mavze, 12-uy", "ru": "📍 Напишите адрес (обязательно):\nНапример: Юнусабад 5 массив, дом 12", "en": "📍 Write address (required):\nExample: Yunusabad 5th district, house 12"}.get(lang, t["ask_address"])
+                    send(chat_id, addr_text)
                 else:
-                    send(chat_id, f"📸 Rasm qabul qilindi ({len(photos)} ta).", [[
-                        {"text": f"✅ Tayyor ({len(photos)} ta)", "callback_data": "nl_photos_done"},
-                        {"text": "⏭ O'tkazib yuborish", "callback_data": "nl_skip_photos"}
-                    ]])
+                    photo_count = {"uz": f"📸 Rasm qabul qilindi ({len(photos)} ta). Yana yuborishingiz yoki tugatishingiz mumkin.", "ru": f"📸 Фото получено ({len(photos)} шт.). Можете добавить ещё или завершить.", "en": f"📸 Photo received ({len(photos)} pcs). You can add more or finish."}.get(lang, f"📸 {len(photos)} ta rasm")
+                    send(chat_id, photo_count, [[{"text": f"✅ Tayyor ({len(photos)} ta)", "callback_data": "nl_photos_done"}]])
+            else:
+                no_photo = {"uz": "📸 Iltimos rasm yuboring! Matn emas.", "ru": "📸 Пожалуйста, отправьте фото! Не текст.", "en": "📸 Please send a photo! Not text."}.get(lang, "📸 Rasm yuboring!")
+                send(chat_id, no_photo)
 
         elif step == "address" and text:
             nl["address"] = text
             state["step"] = "phone"
             set_state(chat_id, state)
-            send(chat_id, t["ask_phone"])
+            phone_text = {"uz": "📞 Telefon raqamingizni yozing (majburiy):\nMasalan: +998901234567", "ru": "📞 Напишите номер телефона (обязательно):\nНапример: +998901234567", "en": "📞 Write your phone number (required):\nExample: +998901234567"}.get(lang, t["ask_phone"])
+            send(chat_id, phone_text)
 
         elif step == "phone":
             phone = contact["phone_number"] if contact else text
@@ -878,9 +878,13 @@ def webhook():
             send(chat_id, t["listing_saved"], main_menu_kb(lang))
 
             # Adminlarga xabar
+            user_info = f"👤 {name}"
+            if username:
+                user_info += f" (@{username})"
+            user_info += f"\n🆔 ID: {uid}"
             for admin_id in get_admins():
                 try:
-                    send(admin_id, f"📢 Yangi elon tasdiqlash kutmoqda!\n\n{format_listing(nl)}",
+                    send(admin_id, f"📢 Yangi elon tasdiqlash kutmoqda!\n\n{user_info}\n\n{format_listing(nl, 'uz')}",
                          [[{"text": "📋 Ko'rish", "callback_data": "adm_pending"}]])
                 except:
                     pass
