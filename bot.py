@@ -227,10 +227,18 @@ EN = {"choose_language":"🌍 Choose language:","welcome":"🏠 <b>Welcome to Uy
 def tx(lang): return {"uz":UZ,"ru":RU,"en":EN}.get(lang, UZ)
 
 def main_menu_kb(lang):
-    t = tx(lang)
-    return [[{"text": t["btn_search"], "callback_data": "menu_search"}],
-            [{"text": t["btn_add_listing"], "callback_data": "menu_add"}, {"text": t["btn_my_listings"], "callback_data": "menu_mylist"}],
-            [{"text": t["btn_settings"], "callback_data": "menu_settings"}, {"text": t["btn_help"], "callback_data": "menu_help"}]]
+    menus = {
+        "uz": [["🔍 Qidiruv"], ["📢 Elon berish", "📋 Mening elonlarim"], ["⚙️ Sozlamalar", "❓ Yordam"]],
+        "ru": [["🔍 Поиск"], ["📢 Добавить", "📋 Мои объявления"], ["⚙️ Настройки", "❓ Помощь"]],
+        "en": [["🔍 Search"], ["📢 Add listing", "📋 My listings"], ["⚙️ Settings", "❓ Help"]]
+    }
+    cbs = [["menu_search"], ["menu_add", "menu_mylist"], ["menu_settings", "menu_help"]]
+    labels = menus.get(lang, menus["uz"])
+    kb = []
+    for row_labels, row_cbs in zip(labels, cbs):
+        row = [{"text": lbl, "callback_data": cb} for lbl, cb in zip(row_labels, row_cbs)]
+        kb.append(row)
+    return kb
 
 # User state
 user_state = {}
@@ -542,6 +550,8 @@ def webhook():
         elif data.startswith("lang_"):
             new_lang = data.split("_")[1]
             update_lang(uid, new_lang)
+            lang = new_lang  # update local lang variable
+            t = tx(lang)    # refresh translations
             handle_main_menu(chat_id, new_lang)
 
         # Qidiruv
